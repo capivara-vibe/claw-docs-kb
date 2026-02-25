@@ -102,6 +102,12 @@ Hardcoded values (edit `scrape_docs.py` directly):
 
 ---
 
+## 🗺️ Roadmap
+
+- [ ] **NotebookLM Sync**: Direct integration via the NotebookLM API (or via Perplexity MCP pipelines) to autonomously create and update notebooks when upstream OpenClaw changes are detected.
+
+---
+
 ## 🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -56,8 +56,7 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-[insert email address]. All complaints will be reviewed and investigated promptly
+reported to the community leaders by [opening an issue](https://github.com/capivara-vibe/claw-docs-kb/issues/new/choose) or, for sensitive matters, using the [Private Vulnerability Reporting](https://github.com/capivara-vibe/claw-docs-kb/security/advisories/new) feature. All complaints will be reviewed and investigated promptly
 and fairly.
 
 ## Attribution
