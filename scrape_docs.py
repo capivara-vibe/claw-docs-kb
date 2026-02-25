@@ -181,7 +181,7 @@ async def run(
                 raise SystemExit(1)
             log.info("✅ robots.txt authorizes scraping.")
         except httpx.HTTPError as e:
-            log.warning("⚠️ Could not fetch robots.txt (%s). Assuming implicit permission.", a)
+            log.warning("⚠️ Could not fetch robots.txt (%s). Assuming implicit permission.", e)
 
         # -- Fetch sitemap --------------------------------------------------
         log.info("🗺️  Fetching sitemap: %s", SITEMAP_URL)
