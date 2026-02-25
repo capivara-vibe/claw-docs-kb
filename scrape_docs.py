@@ -164,6 +164,7 @@ async def run(
     timeout: float,
     clean: bool,
     dry_run: bool,
+    require_robots: bool,
 ) -> None:
     log.info("🚀 ClawDocs scraper starting")
     log.info("   Output dir : %s", output_dir)
@@ -173,6 +174,7 @@ async def run(
     async with httpx.AsyncClient(timeout=timeout, headers=HEADERS) as client:
         # -- Check robots.txt compliance ------------------------------------
         log.info("⚖️  Checking robots.txt compliance...")
+        rp: RobotFileParser | None = None
         try:
             robots_resp = await client.get(ROBOTS_TXT_URL, follow_redirects=True)
             robots_resp.raise_for_status()
@@ -185,8 +187,15 @@ async def run(
                 raise SystemExit(1)
             log.info("✅ robots.txt authorizes scraping.")
         except httpx.HTTPError as e:
+            if require_robots:
+                log.critical(
+                    "🛑 Could not fetch robots.txt (%s). Aborting (--require-robots set).",
+                    e,
+                )
+                raise SystemExit(1) from e
             log.warning(
-                "⚠️ Could not fetch robots.txt (%s). Assuming implicit permission.", e
+                "⚠️ Could not fetch robots.txt (%s). Proceeding without robots.txt enforcement.",
+                e,
             )
 
         # -- Fetch sitemap --------------------------------------------------
@@ -203,9 +212,21 @@ async def run(
         if dry_run:
             log.info("🏜️  Dry run — not writing any files.")
             for url in urls:
-                excluded = should_exclude(url)
-                log.info("  %s %s", "SKIP" if excluded else "  OK", url)
+                if should_exclude(url):
+                    log.info("  SKIP (excluded) %s", url)
+                elif rp is not None and not rp.can_fetch(HEADERS["User-Agent"], url):
+                    log.info("  SKIP (robots)   %s", url)
+                else:
+                    log.info("    OK            %s", url)
             return
+
+        # Filter out robots-disallowed URLs
+        if rp is not None:
+            allowed = [u for u in urls if rp.can_fetch(HEADERS["User-Agent"], u)]
+            skipped = len(urls) - len(allowed)
+            if skipped:
+                log.info("🤖 Skipping %d URL(s) disallowed by robots.txt", skipped)
+            urls = allowed
 
         # -- Prepare output dir ---------------------------------------------
         if clean and output_dir.exists():
@@ -297,6 +318,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Print what would be scraped without writing any files.",
     )
+    parser.add_argument(
+        "--require-robots",
+        action="store_true",
+        default=False,
+        help="Abort if robots.txt cannot be fetched (fail closed). By default, scraping proceeds with a warning.",
+    )
     return parser.parse_args()
 
 
@@ -310,6 +337,7 @@ if __name__ == "__main__":
                 timeout=args.timeout,
                 clean=args.clean,
                 dry_run=args.dry_run,
+                require_robots=args.require_robots,
             )
         )
     except KeyboardInterrupt:
