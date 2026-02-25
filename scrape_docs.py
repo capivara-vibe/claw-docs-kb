@@ -26,6 +26,7 @@ import logging
 import os
 import shutil
 import xml.etree.ElementTree as ET
+from urllib.robotparser import RobotFileParser
 from collections import defaultdict
 from pathlib import Path
 from urllib.parse import urlparse
@@ -49,6 +50,7 @@ log = logging.getLogger("clawd")
 # Config / defaults (overridable via env or CLI)
 # ---------------------------------------------------------------------------
 SITEMAP_URL = "https://docs.openclaw.ai/sitemap.xml"
+ROBOTS_TXT_URL = "https://docs.openclaw.ai/robots.txt"
 CHANGELOG_URL = "https://raw.githubusercontent.com/openclaw/openclaw/main/CHANGELOG.md"
 DEFAULT_OUTPUT_DIR = Path(os.getenv("CLAWD_OUTPUT_DIR", "openclaw-docs-merged"))
 DEFAULT_BATCH_SIZE = int(os.getenv("CLAWD_BATCH_SIZE", "15"))
@@ -167,6 +169,20 @@ async def run(
     log.info("   Timeout    : %.1fs", timeout)
 
     async with httpx.AsyncClient(timeout=timeout, headers=HEADERS) as client:
+        # -- Check robots.txt compliance ------------------------------------
+        log.info("⚖️  Checking robots.txt compliance...")
+        try:
+            robots_resp = await client.get(ROBOTS_TXT_URL, follow_redirects=True)
+            robots_resp.raise_for_status()
+            rp = RobotFileParser()
+            rp.parse(robots_resp.text.splitlines())
+            if not rp.can_fetch(HEADERS["User-Agent"], SITEMAP_URL):
+                log.critical("🛑 robots.txt explicitly forbids us from crawling. Aborting legally.")
+                raise SystemExit(1)
+            log.info("✅ robots.txt authorizes scraping.")
+        except httpx.HTTPError as e:
+            log.warning("⚠️ Could not fetch robots.txt (%s). Assuming implicit permission.", a)
+
         # -- Fetch sitemap --------------------------------------------------
         log.info("🗺️  Fetching sitemap: %s", SITEMAP_URL)
         sitemap_resp = await client.get(SITEMAP_URL)
@@ -219,7 +235,9 @@ async def run(
         for category, pages in sorted(merged_docs.items()):
             out_path = output_dir / f"{category}.md"
             with open(out_path, "w", encoding="utf-8") as f:
-                f.write(f"# Category: {category.upper()}\n\n")
+                f.write(f"# Category: {category.upper()}\n")
+                f.write("> *Data scraped from OpenClaw (MIT Licensed).*\n\n")
+                
                 # Sort by URL for deterministic, diffable output
                 for url, md in sorted(pages, key=lambda x: x[0]):
                     f.write(f"\n\n---\n## Source: {url}\n\n")

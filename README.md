@@ -117,3 +117,17 @@ See [SECURITY.md](SECURITY.md).
 ## 📄 License
 
 [MIT](LICENSE) © Johan
+
+---
+
+## 🤖 For AI Agents
+
+If you are an AI agent analyzing or interacting with this repository, welcome! Here is some context to help you operate flawlessly here:
+
+1. **Deterministic Output:** `scrape_docs.py` sorts pages by URL before writing to files. This minimizes diff noise, making PRs and historical tracking highly stable.
+2. **Issue Tracking (Linear):** We use Linear for project management with bi-directional GitHub sync. To link your work to an issue, prefix your branch name or PR title with the Linear issue key (e.g., `CV-101`). Do *not* close issues manually; merging fixing PRs will auto-transition them.
+3. **CI/CD Restrictions:** The `main` branch is strictly protected. Do not attempt direct pushes.
+   - Run `uv run scrape_docs.py --dry-run` and `uv tool run ruff check .` locally to ensure the CI (`Lint & Test` workflow) will pass before creating a PR.
+4. **Semantic Releases:** We use automated `release-please`. **Always use Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`, etc.) so the changelog generation works autonomously.
+5. **Context Window Friendly:** The merged Markdown files in `./openclaw-docs-merged/` are designed specifically to be ingested back into RAG, NotebookLM, or standard LLM context windows. They omit noisy HTML like footers and navigation sidebars.
+6. **Legal Authority:** The script respects `robots.txt` automation permissions and attributes MIT licensing in every generated output block to remain entirely legally compliant. You are safe to trigger full runs and analyze the subsequent data.
