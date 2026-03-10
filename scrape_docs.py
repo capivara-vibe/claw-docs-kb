@@ -307,6 +307,15 @@ async def run(
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+def parse_non_negative_int(value: str) -> int:
+    ivalue = int(value)
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(
+            f"{value} is an invalid positive int value (must be >= 0)"
+        )
+    return ivalue
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Scrape and merge OpenClaw docs into per-category Markdown files.",
@@ -344,7 +353,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--changelog-releases",
-        type=int,
+        type=parse_non_negative_int,
         default=5,
         help="Keep only the N most recent releases in changelog.md (0 = keep all).",
     )
