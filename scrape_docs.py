@@ -182,7 +182,9 @@ async def fetch_and_convert(
             if 400 <= status < 500:
                 log.warning("❌ HTTP %d — skipping %s", status, url)
                 return None
-            log.warning("⚠️ HTTP %d on %s (attempt %d/%d)", status, url, attempt, retries)
+            log.warning(
+                "⚠️ HTTP %d on %s (attempt %d/%d)", status, url, attempt, retries
+            )
         except Exception as exc:  # noqa: BLE001
             log.warning("⚠️ Error on %s (attempt %d/%d): %s", url, attempt, retries, exc)
 
@@ -218,11 +220,15 @@ async def run(
             rp = RobotFileParser()
             rp.parse(robots_resp.text.splitlines())
             if not rp.can_fetch(HEADERS["User-Agent"], SITEMAP_URL):
-                log.critical("🛑 robots.txt explicitly forbids us from crawling. Aborting legally.")
+                log.critical(
+                    "🛑 robots.txt explicitly forbids us from crawling. Aborting legally."
+                )
                 raise SystemExit(1)
             log.info("✅ robots.txt authorizes scraping.")
         except httpx.HTTPError as e:
-            log.warning("⚠️ Could not fetch robots.txt (%s). Assuming implicit permission.", e)
+            log.warning(
+                "⚠️ Could not fetch robots.txt (%s). Assuming implicit permission.", e
+            )
 
         # -- Fetch sitemap --------------------------------------------------
         log.info("🗺️  Fetching sitemap: %s", SITEMAP_URL)
@@ -231,9 +237,7 @@ async def run(
 
         root = ET.fromstring(sitemap_resp.text)
         urls = [
-            elem.text
-            for elem in root.findall(".//sm:loc", SITEMAP_NS)
-            if elem.text
+            elem.text for elem in root.findall(".//sm:loc", SITEMAP_NS) if elem.text
         ]
         log.info("🔍 Found %d URLs in sitemap", len(urls))
 
@@ -278,7 +282,7 @@ async def run(
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(f"# Category: {category.upper()}\n")
                 f.write("> *Data scraped from OpenClaw (MIT Licensed).*\n\n")
-                
+
                 # Sort by URL for deterministic, diffable output
                 for url, md in sorted(pages, key=lambda x: x[0]):
                     f.write(f"\n\n---\n## Source: {url}\n\n")
