@@ -21,6 +21,7 @@ Env vars (all optional):
 """
 
 import argparse
+import re
 import asyncio
 import logging
 import os
@@ -70,8 +71,44 @@ SITEMAP_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
 # HTTP headers to identify the scraper politely
 HEADERS = {
-    "User-Agent": "ClawDocs-Scraper/1.0 (https://github.com/yourusername/clawd)",
+    "User-Agent": "ClawDocs-Scraper/1.0 (https://github.com/capivara-vibe/claw-docs-kb)",
 }
+
+# Compiled regexes for clean_markdown (compiled once, used per page)
+_RE_ANCHOR_HEADER = re.compile(r"\[\u200b?\]\(#[^)]*\)\s*")
+_RE_COPY_BUTTON = re.compile(r"^Copy\n(?=```)", re.MULTILINE)
+_RE_REMOTE_IMAGE = re.compile(r"!\[[^\]]*\]\(https?://[^)]+\)\s*")
+_RE_CARD_LINK = re.compile(r"\[##\s*(.+?)\n(.+?)\]\((/[^)]+)\)")
+_RE_ORPHAN_STEP = re.compile(r"^(\d+)\n(?=\S)", re.MULTILINE)
+
+
+def clean_markdown(text: str) -> str:
+    """Post-process markdownify output to strip Mintlify rendering noise.
+
+    Optimized for AI/RAG consumption — every remaining byte should carry
+    semantic value.
+    """
+    text = _RE_ANCHOR_HEADER.sub("", text)
+    text = _RE_COPY_BUTTON.sub("", text)
+    text = _RE_REMOTE_IMAGE.sub("", text)
+    text = _RE_CARD_LINK.sub(r"- **\1** — \2 → \3", text)
+    text = _RE_ORPHAN_STEP.sub(r"**Step \1.** ", text)
+    return text
+
+
+def trim_changelog(text: str, max_releases: int) -> str:
+    """Keep only the first *max_releases* versioned release sections."""
+    lines = text.splitlines(keepends=True)
+    kept: list[str] = []
+    release_count = 0
+    for line in lines:
+        # Each release starts with '## <version>' (not '## Unreleased')
+        if line.startswith("## ") and not line.strip().endswith("Unreleased"):
+            release_count += 1
+            if release_count > max_releases:
+                break
+        kept.append(line)
+    return "".join(kept)
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +167,9 @@ async def fetch_and_convert(
                 line for line in md_content.splitlines() if line.strip()
             )
 
+            # Strip Mintlify rendering noise for RAG
+            md_content = clean_markdown(md_content)
+
             category = get_category(url)
             log.info("✅ %s  →  %s", url, category)
             return category, url, md_content
@@ -142,7 +182,9 @@ async def fetch_and_convert(
             if 400 <= status < 500:
                 log.warning("❌ HTTP %d — skipping %s", status, url)
                 return None
-            log.warning("⚠️ HTTP %d on %s (attempt %d/%d)", status, url, attempt, retries)
+            log.warning(
+                "⚠️ HTTP %d on %s (attempt %d/%d)", status, url, attempt, retries
+            )
         except Exception as exc:  # noqa: BLE001
             log.warning("⚠️ Error on %s (attempt %d/%d): %s", url, attempt, retries, exc)
 
@@ -162,6 +204,7 @@ async def run(
     timeout: float,
     clean: bool,
     dry_run: bool,
+    changelog_releases: int = 5,
 ) -> None:
     log.info("🚀 ClawDocs scraper starting")
     log.info("   Output dir : %s", output_dir)
@@ -177,11 +220,15 @@ async def run(
             rp = RobotFileParser()
             rp.parse(robots_resp.text.splitlines())
             if not rp.can_fetch(HEADERS["User-Agent"], SITEMAP_URL):
-                log.critical("🛑 robots.txt explicitly forbids us from crawling. Aborting legally.")
+                log.critical(
+                    "🛑 robots.txt explicitly forbids us from crawling. Aborting legally."
+                )
                 raise SystemExit(1)
             log.info("✅ robots.txt authorizes scraping.")
         except httpx.HTTPError as e:
-            log.warning("⚠️ Could not fetch robots.txt (%s). Assuming implicit permission.", a)
+            log.warning(
+                "⚠️ Could not fetch robots.txt (%s). Assuming implicit permission.", e
+            )
 
         # -- Fetch sitemap --------------------------------------------------
         log.info("🗺️  Fetching sitemap: %s", SITEMAP_URL)
@@ -190,9 +237,7 @@ async def run(
 
         root = ET.fromstring(sitemap_resp.text)
         urls = [
-            elem.text
-            for elem in root.findall(".//sm:loc", SITEMAP_NS)
-            if elem.text
+            elem.text for elem in root.findall(".//sm:loc", SITEMAP_NS) if elem.text
         ]
         log.info("🔍 Found %d URLs in sitemap", len(urls))
 
@@ -237,7 +282,7 @@ async def run(
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(f"# Category: {category.upper()}\n")
                 f.write("> *Data scraped from OpenClaw (MIT Licensed).*\n\n")
-                
+
                 # Sort by URL for deterministic, diffable output
                 for url, md in sorted(pages, key=lambda x: x[0]):
                     f.write(f"\n\n---\n## Source: {url}\n\n")
@@ -248,8 +293,12 @@ async def run(
         log.info("📋 Fetching changelog…")
         changelog_resp = await client.get(CHANGELOG_URL, follow_redirects=True)
         changelog_resp.raise_for_status()
+        changelog_text = changelog_resp.text
+        if changelog_releases > 0:
+            changelog_text = trim_changelog(changelog_text, changelog_releases)
+            log.info("✂️  Trimmed changelog to %d releases", changelog_releases)
         changelog_path = output_dir / "changelog.md"
-        changelog_path.write_text(changelog_resp.text, encoding="utf-8")
+        changelog_path.write_text(changelog_text, encoding="utf-8")
         log.info("📚 %s", changelog_path)
 
     log.info("🎉 Done! Output: %s", output_dir.resolve())
@@ -258,6 +307,15 @@ async def run(
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+def parse_non_negative_int(value: str) -> int:
+    ivalue = int(value)
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(
+            f"{value} is an invalid positive int value (must be >= 0)"
+        )
+    return ivalue
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Scrape and merge OpenClaw docs into per-category Markdown files.",
@@ -293,6 +351,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Print what would be scraped without writing any files.",
     )
+    parser.add_argument(
+        "--changelog-releases",
+        type=parse_non_negative_int,
+        default=5,
+        help="Keep only the N most recent releases in changelog.md (0 = keep all).",
+    )
     return parser.parse_args()
 
 
@@ -306,6 +370,7 @@ if __name__ == "__main__":
                 timeout=args.timeout,
                 clean=args.clean,
                 dry_run=args.dry_run,
+                changelog_releases=args.changelog_releases,
             )
         )
     except KeyboardInterrupt:

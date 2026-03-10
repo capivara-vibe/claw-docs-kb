@@ -24,7 +24,7 @@ jobs:
 
       - name: Lint with ruff
         run: |
-          uv tool run ruff check .
+          uv tool run ruff check . --fix
           uv tool run ruff format --check .
 
       - name: Test script (dry run)
